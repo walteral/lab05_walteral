@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en" xmlns:display="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <title>walteral_GEOG572_Lab05</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.1/dist/leaflet.css" >
+  <!--<link rel="stylesheet" href="https://dc-js.github.io/dc.js/css/dc.min.css">-->
+  <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.5.2/animate.min.css">
+  <!--<script src="https://d3js.org/d3.v5.min.js"></script>-->
+  <link rel="stylesheet" href="http://dc-js.github.io/dc.js/css/dc.css">
+  <link href="https://fonts.googleapis.com/css?family=Artifika|Cinzel+Decorative" rel="stylesheet">
+
+  <style>
+
+    html, body { width: 100%; height: 100%; margin: 0; background: #fff; }
+
+
+    #mag-chart {
+      width:100%;
+      margin: 0 auto;
+    }
+
+    #date-chart {
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    #depth-chart {
+        width: 100%;
+        margin: 0 auto;
+    }
+
+    .dc-data-count {
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .map {
+      width: available;
+      height: 300px;
+
+    }
+
+    .scrollbar-black::-webkit-scrollbar-track {
+      -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.1);
+      background-color: #F5F5F5;
+      border-radius: 10px; }
+
+    .scrollbar {
+      margin-left: 30px;
+      float: left;
+      height: 300px;
+      width: 65px;
+      background: #fff;
+      overflow-y: scroll;
+      margin-bottom: 25px;
+    }
+    .force-overflow {
+      min-height: 350px;
+    }
+
+    .scrollbar-primary::-webkit-scrollbar {
+      width: 12px;
+      background-color: #F5F5F5; }
+
+    .scrollbar-primary::-webkit-scrollbar-thumb {
+      border-radius: 10px;
+      -webkit-box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.1);
+      background-color: #180ef4; }
+
+  </style>
+
+  <script src="https://dc-js.github.io/dc.js/js/d3.js"></script>
+  <script src="https://dc-js.github.io/dc.js/js/crossfilter.js"></script>
+  <script src="https://dc-js.github.io/dc.js/js/dc.js"></script>
+  <script src="https://unpkg.com/leaflet@1.3.1/dist/leaflet.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.1.0/js/bootstrap.min.js"></script>
+
+</head>
+
+<body>
+<!--<div id="map"></div>-->
+<div id="popCount">
+  <strong> Population Density per Basin</strong>
+  <span class="reset" style="display: none;">Selected: <span class="filter"></span></span>
+  <a class="reset" href="javascript:popdimChart.filterAll();dc.redrawAll();"style="display:none;">reset</a>
+  <div class="clearfix"></div>
+</div>
+<div id="areaChart">
+  <strong> Area per Basin</strong>
+  <span class="reset" style="display: none;">Selected: <span class="filter"></span></span>
+  <a class="reset" href="javascript:areadimChart.filterAll();dc.redrawAll();"style="display:none;">reset</a>
+  <div class="clearfix"></div>
+</div>
+
+<div id="map" class="map"></div>
+<div>
+  <div class="dc-data-count">
+    <span class="filter-count"></span> selected out of <span class="total-count"></span> records |<a
+    href="javascript:dc.filterAll();dcrederAll();">Reset All</a>
+  </div>
+
+</div>
+
+  <div id="data-table">
+
+
+      <input class="form-control" id="myInput" type="text" placeholder="Search...">
+      <span class="col-sm-2">BCODE</span>
+      <span class="col-sm-4">Basin Name</span>
+      <!--<span class="col-sm-2">Continent</span>-->
+    <!--<span class="col-sm-2"></span>-->
+      <span class="col-sm-3">Area (Km2)</span>
+      <span class="col-sm-2">Population Density</span>
+      <span class="col-sm-1">Existing Dams</span>
+      <table id="myTable" class="table table-hover dc-data-table"></table>
+
+  </div>
+
+
+
+
+
+<script>
+ var areadimChart = dc.rowChart("#areaChart");
+ var popdimChart = dc.pieChart("#popCount");
+ var visCount = dc.dataCount(".dc-data-count");
+ var visTable = dc.dataTable("#myTable");
+
+// create a map object for us to input the map and it's components into.
+var map = L.map('map', {zoomControl: false, scrollWheelZoom: true}).setView([0,0], 1);
+L.tileLayer('http://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png').addTo(map);
+
+//add in the .csv file .then() run the functions on that data
+d3.json('assets/basins_simplified.geojson').then(function(data) {
+
+
+
+//////////////////////////////////////////////////PREP THE DATA////////////////////////////////////////////////////////
+  //create crossfilter passes each feature to the filter
+  var filter = crossfilter(data.features); //passes the features to the crossfilter
+// groups everything together into one group, this is used to quickly search all of the data at once
+  var all = filter.groupAll();
+
+  var geometry = filter.dimension(function(d) {
+      return d.geometry
+      });
+
+
+//Takes each of the records of the dataset and returns each individual line so that they can be used. .dimension() puts
+// the data into an easily searchable/manipulable format for DC
+  var everything = filter.dimension(function(d) {
+    return d
+  });
+
+//////////////////////////////////////////////SORT THE DATA///////////////////////////////////////////////////////////
+//returns the geometry for each feature; this is the points at which each earthquake happened
+  var popDimension = filter.dimension(function(d) {
+      var pop = d.properties.PopDen2015;
+      return  pop < 50 ? '0-50' :
+          pop < 75 ? '50-75' :
+              pop <   100 ? '75-100' :
+                  pop < 125 ? '100-125' :
+                      pop <   150 ? '125-150' :
+                          '>150'
+  });
+
+    var areaDim = filter.dimension(function(d) {
+        var area = d.properties.Area_km2
+        return  area < 10000 ? '0-10000' :
+            area < 20000 ? '10000 - 20000' :
+                area <   30000 ? '20000 - 30000' :
+                    area < 40000 ? '30000 - 40000' :
+                        area <  50000 ? '40000 - 50000' :
+                            '>50000'
+    });
+
+    var codeDim = filter.dimension(function (d) {
+        var BCODE = d.properties.BCODE
+        return BCODE
+    })
+    var codeGroup = codeDim.group()
+/////////////////////////////////////////GROUP THE DATA///////////////////////////////////////////////////////////////
+// Now that we have the mag dimension captured in an object we have to group them all together so that we can use them
+ var popGroup = popDimension.group();
+    var areaGroup = areaDim.group()
+
+
+
+///////////////////////////////////////////////ADD THE MARKERS TO THE MAP///////////////////////////////////////////////
+  var geoJsonLayer = L.geoJson({
+    type: 'FeatureCollection',
+    features: geometry.top(Infinity)//starts selecting from the .top() and goes until...infinity
+  }, {
+    // pointToLayer: function (feature, latlng) {
+    //   return L.circleMarker(latlng, {
+    //     radius: Math.pow(feature.properties.mag, 2)/2,
+    //     fillColor: "steelblue",
+    //     color: "#fff",
+    //     weight: 1,
+    //     stroke: false,
+    //     opacity: 0.1,
+    //     fillOpacity: 0.1
+    //   })
+    // },
+    onEachFeature: function (feature, layer) {
+        layer.bindTooltip(feature.properties.Basin_Name.toString());
+    }
+  }).addTo(map);
+
+/////////////////////////////////////CREATE THE CHARTS////////////////////////////////////////////////////////////////
+
+    popdimChart
+        .dimension(popDimension)
+        .group(popGroup);
+    areadimChart
+        .dimension(areaDim)
+        .group(areaGroup)
+        .elasticX(true);
+
+    visCount
+        .dimension(filter)
+        .group(all);
+
+    visTable
+        .dimension(codeDim)
+        .group(function(d){
+            return d
+        })
+
+        .columns([
+                function(d) {return d.properties.BCODE},
+                function(d) {return d.properties.Basin_Name},
+                // function(d) {return d.properties.Continent_},
+                function(d) {return d.properties.Area_km2},
+                function(d) {return d.properties.PopDen2015},
+                function(d) {return d.properties.Dams_Exist}
+        ]);
+
+
+
+  //   //binds the barChart  to the <div> that we created earlier
+  //   var popChart = dc.pieChart('#popChart');
+  // //define the characteristics of the chart before we actually add the data to it
+  //   popChart
+  //
+  //       .width(768)
+  //       .height(480)
+  //       .slicesCap(4)
+  //       .innerRadius(100)
+  //       .dimension(popDimension)
+  //       .group(popGroup)
+  //       .legend(dc.legend())
+  //       // workaround for #703: not enough data is accessible through .label() to display percentages
+  //       .on('pretransition', function(d) {
+  //           d.selectAll('text.pie-slice').text(function(d) {
+  //               return d.data.key + ' ' + dc.utils.printSingleValue((d.endAngle - d.startAngle) / (2*Math.PI) * 100) + '%';
+  //           })
+  //       });
+    dc.renderAll()
+});
+
+////////////////////////////////////////LISTEN FOR CHANGES ON THE MAP//////////////////////////////////////////////////
+
+ $(document).ready(function(){
+     $("#myInput").on("keyup", function() {
+         var value = $(this).val().toLowerCase();
+         $("#myTable tr").filter(function() {
+             $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+         });
+     });
+
+
+ });
+
+//define in functions what we want to have happen to the map
+    //This function sees which features are in the bounding box and returns the points that are in it; This filters the
+    //data for the charts and map.
+//     function updateMapFilter() {
+//         geomDimension.filter(function(d) {
+//             return map.getBounds().contains(L.geoJSON(d).getBounds())
+//         });
+//         dc.redrawAll();
+//     }
+//
+//     function updateMap() {
+//         geoJsonLayer.clearLayers();//removes everything
+//         geoJsonLayer.addData({//adds the new data to the map/chart within the scope of the filter
+//             type: 'FeatureCollection',
+//             features: everything.top(Infinity)
+//         });
+//     }
+//
+//
+// //selects the map and runs a filter function on it once it's done moving and zooming
+//     map.on('zoomend moveend', function() {//passes the zoom and move locations as the new filter
+//         updateMapFilter(); //triggers the new function
+//     });
+//
+// //When the chart is "filtered" it runs the function to update the map
+//   popdimChart.on('filtered', function(chart, filter) {
+//     updateMap()//calls the update map function
+//   });
+//
+//   areadimChart.on('filtered', function(chart, filter) {
+//     updateMap()
+//   });
+//   //
+//   // dateChart.on('filtered', function(chart, filter) {
+//   //   updateMap()
+//   // });
+//
+
+ $(".dc-table-group").remove()
+</script>
+</body>
+</html>
